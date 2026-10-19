@@ -10,7 +10,7 @@
  *   Project Settings > Script Properties > add TEAM_CODE = <your code>
  */
 
-const SIZES = ["XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL"];
+const SIZES = ["XS", "S", "M", "L", "XL", "2XL"];
 const MAX_PER_SIZE = 25;
 const ORDERS = "Orders";
 const TOTALS = "Totals";
