@@ -2,41 +2,87 @@
  * ED Shirt Order — Google Apps Script backend.
  *
  * Paste this into Extensions > Apps Script on a PRIVATE Google Sheet.
- * Orders are written to the "Orders" tab; the "Totals" tab tallies sizes.
- * The web app only accepts new orders. It never returns anyone's data,
- * so the sheet stays visible only to people you share it with.
+ * Orders are written to the "Orders" tab; the "Totals" tab tallies
+ * shirts by sleeve and size. The web app only accepts new orders. It
+ * never returns anyone's data, so the sheet stays visible only to
+ * people you share it with.
  *
  * Optional: set a team code so only staff who know it can order.
  *   Project Settings > Script Properties > add TEAM_CODE = <your code>
  */
 
 const SIZES = ["XS", "S", "M", "L", "XL", "2XL"];
-const MAX_PER_SIZE = 25;
+const SLEEVES = [
+  { key: "SS", label: "Short sleeve" },
+  { key: "LS", label: "Long sleeve" },
+];
+// One column per sleeve + size, e.g. "SS-M", "LS-XL".
+const ITEMS = [];
+SLEEVES.forEach(function (sl) { SIZES.forEach(function (sz) { ITEMS.push(sl.key + "-" + sz); }); });
+
+const MAX_PER_ITEM = 25;
 const ORDERS = "Orders";
 const TOTALS = "Totals";
-const HEADERS = ["Order #", "Submitted", "Last updated", "Name", "Email"]
-  .concat(SIZES, ["Total"]);
+const BASE_HEADERS = ["Order #", "Submitted", "Last updated", "Name", "Email"];
+const HEADERS = BASE_HEADERS.concat(ITEMS, ["Total"]);
 const EMAIL_SUBJECT = "Your ED shirt order";
 const FORM_URL = "https://raysantos.github.io/ed-shirt-order/";
 
-/** Run once from the editor (Run > setup) to build the tabs. */
+function sleeveLabel(key) {
+  for (let i = 0; i < SLEEVES.length; i++) if (SLEEVES[i].key === key) return SLEEVES[i].label;
+  return key;
+}
+function itemLabel(item) {
+  const p = item.split("-");
+  return sleeveLabel(p[0]) + " · " + p[1];
+}
+
+/**
+ * Run from the editor (Run > setup) to build or rebuild the tabs.
+ * If the Orders tab has an older column layout, it is renamed
+ * (never deleted) and a fresh Orders tab is created.
+ */
 function setup() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sh = ss.getSheetByName(ORDERS);
-  if (!sh) sh = ss.insertSheet(ORDERS);
-  sh.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]).setFontWeight("bold");
+  if (sh) {
+    const width = Math.max(sh.getLastColumn(), 1);
+    const current = sh.getRange(1, 1, 1, width).getValues()[0].join("|");
+    if (current !== HEADERS.join("|") && sh.getLastRow() > 1) {
+      sh.setName(ORDERS + " (old " + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "MMM d h.mm a") + ")");
+      sh = null;
+    }
+  }
+  if (!sh) sh = ss.getSheetByName(ORDERS) || ss.insertSheet(ORDERS, 0);
+  if (sh.getMaxColumns() < HEADERS.length) sh.insertColumnsAfter(sh.getMaxColumns(), HEADERS.length - sh.getMaxColumns());
+  sh.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);
   sh.setFrozenRows(1);
 
+  // Totals: sizes down, sleeves across.
   let t = ss.getSheetByName(TOTALS);
   if (!t) t = ss.insertSheet(TOTALS);
   t.clear();
-  t.getRange(1, 1, 1, 2).setValues([["Size", "Shirts"]]).setFontWeight("bold");
-  SIZES.forEach(function (s, i) {
-    const col = columnLetter(HEADERS.indexOf(s) + 1);
-    t.getRange(i + 2, 1, 1, 2).setValues([[s, "=SUM(" + ORDERS + "!" + col + "2:" + col + ")"]]);
+  t.getBandings().forEach(function (b) { b.remove(); });
+  const head = ["Size"].concat(SLEEVES.map(function (s) { return s.label; }), ["Total"]);
+  if (t.getMaxColumns() < head.length) t.insertColumnsAfter(t.getMaxColumns(), head.length - t.getMaxColumns());
+  t.getRange(1, 1, 1, head.length).setValues([head]);
+  SIZES.forEach(function (sz, i) {
+    const row = [sz];
+    SLEEVES.forEach(function (sl) {
+      const col = columnLetter(HEADERS.indexOf(sl.key + "-" + sz) + 1);
+      row.push("=SUM(" + ORDERS + "!" + col + "2:" + col + ")");
+    });
+    const r = i + 2;
+    row.push("=SUM(B" + r + ":" + columnLetter(SLEEVES.length + 1) + r + ")");
+    t.getRange(r, 1, 1, row.length).setValues([row]);
   });
   const last = SIZES.length + 2;
-  t.getRange(last, 1, 1, 2).setValues([["Total", "=SUM(B2:B" + (last - 1) + ")"]]).setFontWeight("bold");
+  const totalRow = ["Total"];
+  for (let c = 2; c <= head.length; c++) {
+    const L = columnLetter(c);
+    totalRow.push("=SUM(" + L + "2:" + L + (last - 1) + ")");
+  }
+  t.getRange(last, 1, 1, totalRow.length).setValues([totalRow]);
   t.getRange(last + 1, 1, 1, 2).setValues([["Orders", "=COUNTA(" + ORDERS + "!A2:A)"]]);
 
   const def = ss.getSheetByName("Sheet1");
@@ -47,12 +93,12 @@ function setup() {
 
 /** Formats both tabs to match the form. Safe to run again any time. */
 function styleSheets() {
-  const INK = "#1d2a44", PAPER = "#e7e8eb", ACCENT = "#e0a526", LINE = "#c6c9d1";
+  const INK = "#1d2a44", PAPER = "#e7e8eb", ACCENT = "#e0a526", LINE = "#c6c9d1", LONG = "#2b3d63";
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sh = ss.getSheetByName(ORDERS);
   const t = ss.getSheetByName(TOTALS);
   const n = HEADERS.length;
-  const firstSize = HEADERS.indexOf(SIZES[0]) + 1;
+  const firstItem = BASE_HEADERS.length + 1;
   const totalCol = HEADERS.indexOf("Total") + 1;
 
   // Orders tab
@@ -60,37 +106,48 @@ function styleSheets() {
   sh.getRange(1, 1, maxRows, n).setFontFamily("Arial").setFontSize(10).setVerticalAlignment("middle");
   sh.getRange(1, 1, 1, n).setBackground(INK).setFontColor("#ffffff").setFontWeight("bold")
     .setHorizontalAlignment("center");
+  // Long-sleeve headers a shade lighter so the two groups read apart.
+  sh.getRange(1, firstItem + SIZES.length, 1, SIZES.length).setBackground(LONG);
   sh.getRange(1, 4, 1, 2).setHorizontalAlignment("left");
   sh.setRowHeight(1, 32);
   sh.getRange(1, totalCol).setBackground(ACCENT).setFontColor(INK);
   sh.getRange(2, 1, maxRows - 1, 1).setNumberFormat("@").setHorizontalAlignment("center");
   sh.getRange(2, 2, maxRows - 1, 2).setNumberFormat("mmm d, yyyy h:mm am/pm").setHorizontalAlignment("left");
-  sh.getRange(2, firstSize, maxRows - 1, SIZES.length).setNumberFormat("0;-0;\"\"").setHorizontalAlignment("center");
+  sh.getRange(2, firstItem, maxRows - 1, ITEMS.length).setNumberFormat("0;-0;\"\"").setHorizontalAlignment("center")
+    .setFontWeight("normal");
   sh.getRange(2, totalCol, maxRows - 1, 1).setNumberFormat("0").setFontWeight("bold").setHorizontalAlignment("center");
   [90, 150, 150, 180, 230].forEach(function (w, i) { sh.setColumnWidth(i + 1, w); });
-  for (let c = firstSize; c < totalCol; c++) sh.setColumnWidth(c, 56);
+  for (let c = firstItem; c < totalCol; c++) sh.setColumnWidth(c, 62);
   sh.setColumnWidth(totalCol, 64);
+  sh.getRange(1, firstItem + SIZES.length, maxRows, 1)
+    .setBorder(null, true, null, null, null, null, LINE, SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
   sh.getBandings().forEach(function (b) { b.remove(); });
   sh.getRange(1, 1, maxRows, n).applyRowBanding(SpreadsheetApp.BandingTheme.LIGHT_GREY, true, false)
     .setHeaderRowColor(INK).setFirstRowColor("#ffffff").setSecondRowColor("#f3f4f6");
+  // Banding resets header colors; reapply the accents.
+  sh.getRange(1, firstItem + SIZES.length, 1, SIZES.length).setBackground(LONG);
+  sh.getRange(1, totalCol).setBackground(ACCENT).setFontColor(INK);
   sh.setFrozenRows(1);
-  sh.setFrozenColumns(0);
   if (sh.getMaxColumns() > n) sh.deleteColumns(n + 1, sh.getMaxColumns() - n);
   sh.setTabColor(INK);
 
   // Totals tab
+  const tCols = SLEEVES.length + 2;
   const tRows = SIZES.length + 3;
-  t.getRange(1, 1, tRows, 2).setFontFamily("Arial").setFontSize(11).setVerticalAlignment("middle");
-  t.getRange(1, 1, 1, 2).setBackground(INK).setFontColor("#ffffff").setFontWeight("bold");
+  t.getRange(1, 1, tRows, tCols).setFontFamily("Arial").setFontSize(11).setVerticalAlignment("middle")
+    .setFontColor(INK).setBackground(null).setFontWeight("normal");
+  t.getRange(1, 1, 1, tCols).setBackground(INK).setFontColor("#ffffff").setFontWeight("bold");
   t.getRange(2, 1, SIZES.length, 1).setFontWeight("bold");
-  t.getRange(2, 1, SIZES.length, 2).setBorder(null, null, true, null, null, true, LINE, SpreadsheetApp.BorderStyle.SOLID);
-  t.getRange(SIZES.length + 2, 1, 1, 2).setBackground(ACCENT).setFontColor(INK).setFontWeight("bold");
-  t.getRange(SIZES.length + 3, 1, 1, 2).setBackground(PAPER).setFontColor(INK);
-  t.getRange(1, 2, tRows, 1).setHorizontalAlignment("center").setNumberFormat("0");
-  t.setColumnWidth(1, 110); t.setColumnWidth(2, 90);
+  t.getRange(2, tCols, SIZES.length, 1).setFontWeight("bold");
+  t.getRange(2, 1, SIZES.length, tCols).setBorder(null, null, true, null, null, true, LINE, SpreadsheetApp.BorderStyle.SOLID);
+  t.getRange(SIZES.length + 2, 1, 1, tCols).setBackground(ACCENT).setFontWeight("bold");
+  t.getRange(SIZES.length + 3, 1, 1, 2).setBackground(PAPER);
+  t.getRange(1, 2, tRows, tCols - 1).setHorizontalAlignment("center").setNumberFormat("0");
+  t.setColumnWidth(1, 90);
+  for (let c = 2; c <= tCols; c++) t.setColumnWidth(c, 110);
   for (let r = 1; r <= tRows; r++) t.setRowHeight(r, 28);
   t.setFrozenRows(1);
-  if (t.getMaxColumns() > 2) t.deleteColumns(3, t.getMaxColumns() - 2);
+  if (t.getMaxColumns() > tCols) t.deleteColumns(tCols + 1, t.getMaxColumns() - tCols);
   t.setTabColor(ACCENT);
 }
 
@@ -116,12 +173,12 @@ function doPost(e) {
     if (!name) return json({ ok: false, error: "missing_name" });
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json({ ok: false, error: "bad_email" });
 
-    const sizes = {};
+    const items = {};
     let total = 0;
-    SIZES.forEach(function (s) {
-      const n = Math.floor(Number(body.sizes && body.sizes[s]) || 0);
-      const q = Math.max(0, Math.min(MAX_PER_SIZE, n));
-      if (q) { sizes[s] = q; total += q; }
+    ITEMS.forEach(function (k) {
+      const n = Math.floor(Number(body.items && body.items[k]) || 0);
+      const q = Math.max(0, Math.min(MAX_PER_ITEM, n));
+      if (q) { items[k] = q; total += q; }
     });
     if (!total) return json({ ok: false, error: "no_shirts" });
 
@@ -134,6 +191,8 @@ function doPost(e) {
     lock.waitLock(10000);
     const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(ORDERS);
     if (!sh) return json({ ok: false, error: "not_set_up" });
+    const header = sh.getRange(1, 1, 1, HEADERS.length).getValues()[0].join("|");
+    if (header !== HEADERS.join("|")) return json({ ok: false, error: "not_set_up" });
 
     const now = new Date();
     const emailCol = HEADERS.indexOf("Email") + 1;
@@ -156,11 +215,11 @@ function doPost(e) {
     }
 
     const values = [number, submitted, now, name, email]
-      .concat(SIZES.map(function (s) { return sizes[s] || 0; }), [total]);
+      .concat(ITEMS.map(function (k) { return items[k] || 0; }), [total]);
     sh.getRange(row, 1, 1, values.length).setValues([values]);
     lock.releaseLock();
 
-    sendConfirmation(email, name, number, sizes, total, updated);
+    sendConfirmation(email, name, number, items, total, updated);
     return json({ ok: true, number: number, updated: updated });
   } catch (err) {
     console.error(err);
@@ -170,9 +229,9 @@ function doPost(e) {
   }
 }
 
-function sendConfirmation(email, name, number, sizes, total, updated) {
-  const lines = SIZES.filter(function (s) { return sizes[s]; })
-    .map(function (s) { return sizes[s] + " × " + s; });
+function sendConfirmation(email, name, number, items, total, updated) {
+  const lines = ITEMS.filter(function (k) { return items[k]; })
+    .map(function (k) { return itemLabel(k) + " × " + items[k]; });
   const text = [
     "Hi " + name + ",",
     "",
@@ -190,7 +249,7 @@ function sendConfirmation(email, name, number, sizes, total, updated) {
       to: email,
       subject: EMAIL_SUBJECT + (updated ? " (updated)" : ""),
       body: text,
-      htmlBody: confirmationHtml(name, number, sizes, total, updated),
+      htmlBody: confirmationHtml(name, number, items, total, updated),
       name: "ED Shirt Order",
     });
   } catch (err) {
@@ -198,8 +257,8 @@ function sendConfirmation(email, name, number, sizes, total, updated) {
   }
 }
 
-/** Email version of the form's look: grey paper, navy ink, mustard tag. */
-function confirmationHtml(name, number, sizes, total, updated) {
+/** Email version of the form's look: grey paper, navy ink, mustard button. */
+function confirmationHtml(name, number, items, total, updated) {
   const INK = "#1d2a44", PAPER = "#e7e8eb", CARD = "#f7f7f8", LINE = "#c6c9d1",
         MUTED = "#5d6678", ACCENT = "#e0a526", OK = "#2f7a4f";
   const DISPLAY = "'Archivo Black','Arial Black',Impact,Helvetica,Arial,sans-serif";
@@ -214,10 +273,13 @@ function confirmationHtml(name, number, sizes, total, updated) {
     return '<td style="padding:8px 0;font-family:' + MONO + ';font-size:12px;letter-spacing:1px;' +
       'text-transform:uppercase;color:' + MUTED + ';vertical-align:top;width:110px">' + t + '</td>';
   };
-  const rows = SIZES.filter(function (s) { return sizes[s]; }).map(function (s) {
-    return '<tr><td style="padding:10px 0;border-bottom:1px solid ' + LINE + ';font-family:' + DISPLAY +
-      ';font-size:18px;color:' + INK + '">' + s + '</td><td align="right" style="padding:10px 0;border-bottom:1px solid ' +
-      LINE + ';font-family:' + MONO + ';font-size:15px;color:' + INK + '">× ' + sizes[s] + '</td></tr>';
+  const rows = ITEMS.filter(function (k) { return items[k]; }).map(function (k) {
+    const p = k.split("-");
+    return '<tr><td style="padding:10px 0;border-bottom:1px solid ' + LINE + ';font-family:' + BODY +
+      ';font-size:14px;color:' + MUTED + '">' + sleeveLabel(p[0]) + '</td>' +
+      '<td style="padding:10px 0;border-bottom:1px solid ' + LINE + ';font-family:' + DISPLAY +
+      ';font-size:18px;color:' + INK + '">' + p[1] + '</td><td align="right" style="padding:10px 0;border-bottom:1px solid ' +
+      LINE + ';font-family:' + MONO + ';font-size:15px;color:' + INK + '">× ' + items[k] + '</td></tr>';
   }).join("");
 
   return '' +
