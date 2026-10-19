@@ -224,7 +224,7 @@ function confirmationHtml(name, number, sizes, total, updated) {
   '<tr><td align="center" style="padding:32px 16px">' +
   '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px">' +
     '<tr><td style="padding-bottom:6px;font-family:' + MONO + ';font-size:12px;letter-spacing:2px;text-transform:uppercase;color:' + MUTED + '">Emergency Department · West Orange</td></tr>' +
-    '<tr><td style="padding-bottom:22px;font-family:' + DISPLAY + ';font-size:40px;line-height:44px;text-transform:uppercase;color:' + INK + '">ED team <span style="background:' + ACCENT + ';color:' + INK + ';padding:0 6px">shirt</span> order</td></tr>' +
+    '<tr><td style="padding-bottom:22px;font-family:' + DISPLAY + ';font-size:40px;line-height:44px;text-transform:uppercase;color:' + INK + '">Shirt Order Form</td></tr>' +
     '<tr><td style="background:' + CARD + ';border:1px solid ' + LINE + ';border-top:4px solid ' + OK + ';border-radius:10px;padding:24px">' +
       '<div style="font-family:' + DISPLAY + ';font-size:26px;text-transform:uppercase;color:' + OK + ';margin:0 0 8px">' + (updated ? "Order updated" : "Order placed") + '</div>' +
       '<div style="font-family:' + BODY + ';font-size:16px;line-height:24px;color:' + INK + ';margin:0 0 18px">Thanks, ' + esc(name) + '. ' +
