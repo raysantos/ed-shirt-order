@@ -29,7 +29,8 @@ Shirt order form for the Emergency Department team. The form is a static page on
 ## How orders work
 
 - Each email address gets one order. Submitting again with the same email updates that order and sends an "updated" confirmation.
-- The **Totals** tab shows how many of each size to order from the printer.
+- The **Totals** tab shows how many of each sleeve style and size to order from the printer.
+- Each order row has one column per style and size (SS = short sleeve, LS = long sleeve).
 - Confirmation emails come from your Google account and show as "ED Shirt Order".
 
 ## Security notes
@@ -40,3 +41,7 @@ Shirt order form for the Emergency Department team. The form is a static page on
 - A hidden field filters out spam bots. Repeat submissions from the same email are rate-limited.
 - The page includes `noindex` so search engines skip it.
 - After changing `Code.gs`, use **Deploy → Manage deployments → Edit → New version** so the URL stays the same.
+
+## Shirt photos
+
+The form shows a placeholder for each style until photos are added. To add them, put the image files in an `images/` folder (for example `images/short-sleeve.jpg` and `images/long-sleeve.jpg`) and set their paths under `images` in `config.js`. Square images look best.
