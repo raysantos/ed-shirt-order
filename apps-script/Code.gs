@@ -17,6 +17,7 @@ const TOTALS = "Totals";
 const HEADERS = ["Order #", "Submitted", "Last updated", "Name", "Email"]
   .concat(SIZES, ["Total"]);
 const EMAIL_SUBJECT = "Your ED shirt order";
+const FORM_URL = "https://raysantos.github.io/ed-shirt-order/";
 
 /** Run once from the editor (Run > setup) to build the tabs. */
 function setup() {
@@ -181,7 +182,8 @@ function sendConfirmation(email, name, number, sizes, total, updated) {
     lines.join("\n"),
     "Total: " + total + " shirt" + (total === 1 ? "" : "s"),
     "",
-    "To change your order, submit the form again with this same email address.",
+    "To change your order, submit the form again with this same email address:",
+    FORM_URL,
   ].join("\n");
   try {
     MailApp.sendEmail({
@@ -235,6 +237,9 @@ function confirmationHtml(name, number, sizes, total, updated) {
       '</table>' +
       '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:12px;border-top:1.5px solid ' + LINE + '">' + rows + '</table>' +
       '<div style="font-family:' + BODY + ';font-size:13px;line-height:20px;color:' + MUTED + ';margin-top:20px">To change your order, submit the form again with this same email address.</div>' +
+      '<table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:14px"><tr><td style="background:' + ACCENT + ';border-radius:6px">' +
+        '<a href="' + FORM_URL + '" style="display:inline-block;padding:12px 20px;font-family:' + DISPLAY + ';font-size:14px;text-transform:uppercase;letter-spacing:0.5px;color:' + INK + ';text-decoration:none">Open the order form</a>' +
+      '</td></tr></table>' +
     '</td></tr>' +
   '</table></td></tr></table></div>';
 }
