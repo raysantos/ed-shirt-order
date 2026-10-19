@@ -40,6 +40,57 @@ function setup() {
 
   const def = ss.getSheetByName("Sheet1");
   if (def && ss.getSheets().length > 2 && def.getLastRow() === 0) ss.deleteSheet(def);
+
+  styleSheets();
+}
+
+/** Formats both tabs to match the form. Safe to run again any time. */
+function styleSheets() {
+  const INK = "#1d2a44", PAPER = "#e7e8eb", ACCENT = "#e0a526", LINE = "#c6c9d1";
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName(ORDERS);
+  const t = ss.getSheetByName(TOTALS);
+  const n = HEADERS.length;
+  const firstSize = HEADERS.indexOf(SIZES[0]) + 1;
+  const totalCol = HEADERS.indexOf("Total") + 1;
+
+  // Orders tab
+  const maxRows = sh.getMaxRows();
+  sh.getRange(1, 1, maxRows, n).setFontFamily("Arial").setFontSize(10).setVerticalAlignment("middle");
+  sh.getRange(1, 1, 1, n).setBackground(INK).setFontColor("#ffffff").setFontWeight("bold")
+    .setHorizontalAlignment("center");
+  sh.getRange(1, 4, 1, 2).setHorizontalAlignment("left");
+  sh.setRowHeight(1, 32);
+  sh.getRange(1, totalCol).setBackground(ACCENT).setFontColor(INK);
+  sh.getRange(2, 1, maxRows - 1, 1).setNumberFormat("@").setHorizontalAlignment("center");
+  sh.getRange(2, 2, maxRows - 1, 2).setNumberFormat("mmm d, yyyy h:mm am/pm").setHorizontalAlignment("left");
+  sh.getRange(2, firstSize, maxRows - 1, SIZES.length).setNumberFormat("0;-0;\"\"").setHorizontalAlignment("center");
+  sh.getRange(2, totalCol, maxRows - 1, 1).setNumberFormat("0").setFontWeight("bold").setHorizontalAlignment("center");
+  [90, 150, 150, 180, 230].forEach(function (w, i) { sh.setColumnWidth(i + 1, w); });
+  for (let c = firstSize; c < totalCol; c++) sh.setColumnWidth(c, 56);
+  sh.setColumnWidth(totalCol, 64);
+  sh.getBandings().forEach(function (b) { b.remove(); });
+  sh.getRange(1, 1, maxRows, n).applyRowBanding(SpreadsheetApp.BandingTheme.LIGHT_GREY, true, false)
+    .setHeaderRowColor(INK).setFirstRowColor("#ffffff").setSecondRowColor("#f3f4f6");
+  sh.setFrozenRows(1);
+  sh.setFrozenColumns(0);
+  if (sh.getMaxColumns() > n) sh.deleteColumns(n + 1, sh.getMaxColumns() - n);
+  sh.setTabColor(INK);
+
+  // Totals tab
+  const tRows = SIZES.length + 3;
+  t.getRange(1, 1, tRows, 2).setFontFamily("Arial").setFontSize(11).setVerticalAlignment("middle");
+  t.getRange(1, 1, 1, 2).setBackground(INK).setFontColor("#ffffff").setFontWeight("bold");
+  t.getRange(2, 1, SIZES.length, 1).setFontWeight("bold");
+  t.getRange(2, 1, SIZES.length, 2).setBorder(null, null, true, null, null, true, LINE, SpreadsheetApp.BorderStyle.SOLID);
+  t.getRange(SIZES.length + 2, 1, 1, 2).setBackground(ACCENT).setFontColor(INK).setFontWeight("bold");
+  t.getRange(SIZES.length + 3, 1, 1, 2).setBackground(PAPER).setFontColor(INK);
+  t.getRange(1, 2, tRows, 1).setHorizontalAlignment("center").setNumberFormat("0");
+  t.setColumnWidth(1, 110); t.setColumnWidth(2, 90);
+  for (let r = 1; r <= tRows; r++) t.setRowHeight(r, 28);
+  t.setFrozenRows(1);
+  if (t.getMaxColumns() > 2) t.deleteColumns(3, t.getMaxColumns() - 2);
+  t.setTabColor(ACCENT);
 }
 
 function doGet() {
