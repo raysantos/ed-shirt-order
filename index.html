@@ -38,14 +38,29 @@ input[type=text],input[type=email]{font:inherit;color:var(--ink);background:var(
 input:focus-visible,button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 fieldset{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
 .lines{display:flex;flex-direction:column;gap:10px}
-.line{display:grid;grid-template-columns:1fr 1fr;gap:12px 14px;align-items:end}
-.line+.line{border-top:1px solid var(--line);padding-top:14px}
-.lhead{grid-column:1/-1;display:flex;justify-content:space-between;align-items:center;font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink)}
+.line{border:1.5px solid var(--line);border-radius:8px;background:var(--paper)}
+.line.open{border-color:var(--ink)}
+.lhead{all:unset;box-sizing:border-box;width:100%;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;padding:12px 14px;cursor:pointer}
+.lhead:focus-visible{outline:3px solid var(--accent);outline-offset:2px;border-radius:6px}
+.ln{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink);white-space:nowrap}
+.lsum{font-size:14px;line-height:1.35;color:var(--ink);min-width:0}
+.lsum strong{font-weight:600}
+.lsum small{display:block;font-size:12.5px;color:var(--muted)}
+.lsum b{color:var(--ink);font-family:var(--mono);font-weight:500}
+.line.todo:not(.open) .lsum{color:var(--bad)}
+.line.open .lsum{visibility:hidden}
+.chev{width:8px;height:8px;border-right:2px solid var(--ink);border-bottom:2px solid var(--ink);transform:rotate(45deg);margin:-4px 4px 0 0}
+.line.open .chev{transform:rotate(-135deg);margin-top:4px}
+.lbody{display:grid;grid-template-columns:1fr 1fr;gap:12px 14px;align-items:end;padding:2px 14px 16px}
+.lbody[hidden]{display:none}
+.wide,.lrm{grid-column:1/-1}
+.lrm{align-items:flex-start}
 .ctl{display:flex;flex-direction:column;gap:5px;min-width:0}
 .eb{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
 .ctl .select{display:block;flex:none;width:100%}
-.lines{gap:14px}
-@media (max-width:600px){.line{grid-template-columns:1fr}.qty{width:max-content}}
+.ctl .select select{background:var(--card)}
+.ctl .qty{background:var(--card)}
+@media (max-width:600px){.lbody{grid-template-columns:1fr}.qty{width:max-content}}
 
 .select{position:relative;flex:1 1 130px;min-width:0}
 .select.sleeve{flex-basis:150px}
@@ -130,11 +145,6 @@ td.n{font-variant-numeric:tabular-nums;text-align:right}
       <input id="email" type="email" autocomplete="email" required>
       <span class="hint">Your order confirmation goes here.</span>
     </div>
-    <div class="field">
-      <label for="role">Title on the back</label>
-      <div class="select solo"><select id="role" required></select></div>
-      <span class="hint">Printed at the top of the badge on the back of every shirt you order.</span>
-    </div>
     <fieldset>
       <legend class="legend">Your shirts</legend>
       <div class="lines" id="lines"></div>
@@ -151,7 +161,6 @@ td.n{font-variant-numeric:tabular-nums;text-align:right}
     <p style="margin:0">A confirmation email is on its way to <strong id="cEmail"></strong>.</p>
     <dl class="receipt">
       <dt>Name</dt><dd id="cName"></dd>
-      <dt>Back title</dt><dd id="cRole"></dd>
       <dt>Shirts</dt><dd id="cSize"></dd>
       <dt>Order #</dt><dd id="cNum" style="font-family:var(--mono)"></dd>
     </dl>
@@ -160,40 +169,46 @@ td.n{font-variant-numeric:tabular-nums;text-align:right}
 
 </div>
 
-<script src="config.js?v=4"></script>
+<script src="config.js?v=5"></script>
 <script>
 const SIZES=["XS","S","M","L","XL","2XL"], MAX=25;
 const SLEEVES=[["SS","Short sleeve"],["LS","Long sleeve"]];
 const DESIGNS=[["B","Red cross badge"],["C","Flag badge"]];
 const ROLES=[["RN","Registered Nurse"],["HT","Health Technician"],["PH","Physician"],["SW","Social Worker"],["NM","Nurse Manager"]];
-const ITEMS=SLEEVES.flatMap(([k])=>DESIGNS.flatMap(([d])=>SIZES.map(z=>k+"-"+d+"-"+z)));
 const nameOf=(list,k)=>(list.find(s=>s[0]===k)||[k,k])[1];
 const CFG=window.ORDER_CONFIG||{};
 const $=id=>document.getElementById(id);
-let lines=[{sleeve:"",design:"",size:"",qty:1}], focusLine=0;
-function totalOf(c){return Object.values(c||{}).reduce((a,b)=>a+(+b||0),0)}
-function itemName(k){const[s,d,z]=k.split("-");return `${nameOf(SLEEVES,s)}, ${nameOf(DESIGNS,d)}, ${z}`}
-function summary(c){return ITEMS.filter(k=>c&&c[k]>0).map(k=>`${c[k]} × ${itemName(k)}`).join("; ")}
-function toItems(){const m={};lines.forEach(l=>{if(l.sleeve&&l.design&&l.size){const k=l.sleeve+"-"+l.design+"-"+l.size;m[k]=(m[k]||0)+l.qty}});return m}
+const esc=t=>String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const blank=()=>({sleeve:"",design:"",role:"RN",size:"",qty:1});
+let lines=[blank()], open=0;
+const done=l=>!!(l.sleeve&&l.design&&l.role&&l.size);
+const lineText=l=>[l.sleeve&&nameOf(SLEEVES,l.sleeve),l.design&&nameOf(DESIGNS,l.design),nameOf(ROLES,l.role),l.size].filter(Boolean).join(" · ");
+const sumHtml=l=>done(l)?`<strong>${esc(nameOf(ROLES,l.role))}</strong> · ${l.size} <b>× ${l.qty}</b><small>${esc(nameOf(SLEEVES,l.sleeve))} · ${esc(nameOf(DESIGNS,l.design))}</small>`:"Not finished";
 const opt=(v,t,cur)=>`<option value="${v}"${cur===v?" selected":""}>${t}</option>`;
-$("role").insertAdjacentHTML("beforeend",ROLES.map(([k,t])=>opt(k,t,"RN")).join(""));
+const sel=(i,f,label,list,cur)=>`<label class="ctl${f==="role"?" wide":""}"><span class="eb">${label}</span><span class="select"><select id="${f}-${i}" data-i="${i}" data-f="${f}">${f==="role"?"":`<option value="">Choose</option>`}${list.map(([k,t])=>opt(k,t,cur)).join("")}</select></span></label>`;
 function renderLines(){
-  $("lines").innerHTML=lines.map((l,i)=>`<div class="line">${lines.length>1?`<div class="lhead"><span>Shirt ${i+1}</span><button type="button" class="rm" data-rm="${i}">Remove</button></div>`:""}<label class="ctl"><span class="eb">Sleeve</span><span class="select"><select id="sleeve-${i}" data-i="${i}" data-f="sleeve"><option value="">Choose</option>${SLEEVES.map(([k,t])=>opt(k,t,l.sleeve)).join("")}</select></span></label><label class="ctl"><span class="eb">Back design</span><span class="select"><select id="design-${i}" data-i="${i}" data-f="design"><option value="">Choose</option>${DESIGNS.map(([k,t])=>opt(k,t,l.design)).join("")}</select></span></label><label class="ctl ctl-size"><span class="eb">Size</span><span class="select"><select id="size-${i}" data-i="${i}" data-f="size"><option value="">Choose</option>${SIZES.map(z=>opt(z,z,l.size)).join("")}</select></span></label><div class="ctl ctl-qty"><span class="eb" id="qty-l-${i}">Quantity</span><div class="qty" role="group" aria-labelledby="qty-l-${i}"><button type="button" data-i="${i}" data-d="-1" aria-label="One fewer">−</button><output>${l.qty}</output><button type="button" data-i="${i}" data-d="1" aria-label="One more">+</button></div></div></div>`).join("");
+  $("lines").innerHTML=lines.map((l,i)=>{
+    const isOpen=i===open;
+    const head=`<button type="button" class="lhead" data-open="${i}" aria-expanded="${isOpen}" aria-controls="body-${i}"><span class="ln">Shirt ${i+1}</span><span class="lsum">${sumHtml(l)}</span><span class="chev" aria-hidden="true"></span></button>`;
+    const body=`<div class="lbody" id="body-${i}"${isOpen?"":" hidden"}>${sel(i,"sleeve","Sleeve",SLEEVES,l.sleeve)}${sel(i,"design","Back design",DESIGNS,l.design)}${sel(i,"role","Title on back",ROLES,l.role)}${sel(i,"size","Size",SIZES.map(z=>[z,z]),l.size)}<div class="ctl"><span class="eb" id="qty-l-${i}">Quantity</span><div class="qty" role="group" aria-labelledby="qty-l-${i}"><button type="button" data-i="${i}" data-d="-1" aria-label="One fewer">−</button><output>${l.qty}</output><button type="button" data-i="${i}" data-d="1" aria-label="One more">+</button></div></div>${lines.length>1?`<div class="ctl lrm"><button type="button" class="rm" data-rm="${i}">Remove shirt ${i+1}</button></div>`:""}</div>`;
+    return `<div class="line${isOpen?" open":""}${done(l)?"":" todo"}">${head}${body}</div>`;
+  }).join("");
   paint();
 }
 function preview(){
-  const l=lines[Math.min(focusLine,lines.length-1)]||{}, s=l.sleeve||"LS", d=l.design||"B", r=$("role").value||"RN";
+  const l=lines[Math.min(Math.max(open,0),lines.length-1)]||{}, s=l.sleeve||"LS", d=l.design||"B", r=l.role||"RN";
   const src=`images/${s}-${d}-${r}.jpg`; if(!$("pv").src.endsWith(src))$("pv").src=src;
   $("pv").alt=`${nameOf(SLEEVES,s)} shirt, ${nameOf(DESIGNS,d)}, ${nameOf(ROLES,r)}: front, side and back`;
   $("pvcap").textContent=`${nameOf(SLEEVES,s)} · ${nameOf(ROLES,r)}`;
 }
-function paint(){const m=toItems(),t=totalOf(m);$("totalLine").textContent=t?`${t} shirt${t===1?"":"s"}: ${summary(m)}`:"Choose a sleeve, back design and size to add shirts";preview()}
-$("role").addEventListener("change",preview);
-$("lines").addEventListener("change",e=>{const i=e.target.dataset.i,f=e.target.dataset.f;if(i!=null&&f){lines[i][f]=e.target.value;focusLine=+i;paint()}});
+function total(){return lines.filter(done).reduce((a,l)=>a+l.qty,0)}
+function paint(){const t=total();$("totalLine").textContent=t?`${t} shirt${t===1?"":"s"} in your order`:"Choose a sleeve, back design and size to add a shirt";preview()}
+$("lines").addEventListener("change",e=>{const i=e.target.dataset.i,f=e.target.dataset.f;if(i!=null&&f){lines[i][f]=e.target.value;const line=e.target.closest(".line");line.classList.toggle("todo",!done(lines[i]));line.querySelector(".lsum").innerHTML=sumHtml(lines[i]);paint()}});
 $("lines").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;
-  if(b.dataset.rm!=null){lines.splice(+b.dataset.rm,1);focusLine=Math.min(focusLine,lines.length-1);renderLines();return}
+  if(b.dataset.open!=null){const i=+b.dataset.open;open=open===i?-1:i;renderLines();return}
+  if(b.dataset.rm!=null){lines.splice(+b.dataset.rm,1);open=Math.min(Math.max(open,0),lines.length-1);renderLines();return}
   const i=+b.dataset.i;lines[i].qty=Math.max(1,Math.min(MAX,lines[i].qty+(+b.dataset.d)));renderLines();});
-$("addLine").onclick=()=>{lines.push({sleeve:"",design:"",size:"",qty:1});focusLine=lines.length-1;renderLines();$("sleeve-"+(lines.length-1)).focus()};
+$("addLine").onclick=()=>{const prev=lines[lines.length-1];const n=blank();if(prev){n.sleeve=prev.sleeve;n.design=prev.design;n.role=prev.role}lines.push(n);open=lines.length-1;renderLines();$("size-"+open).focus()};
 if(CFG.teamCodeRequired)$("codeField").hidden=false;
 renderLines();
 // Warm the image cache so switching options is instant.
@@ -209,18 +224,16 @@ $("orderForm").addEventListener("submit",async e=>{
   if(CFG.teamCodeRequired&&!code){err.textContent="Enter the team code.";$("code").focus();return}
   if(!name){err.textContent=MSG.missing_name;$("name").focus();return}
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){err.textContent=MSG.bad_email;$("email").focus();return}
-  const role=$("role").value;
-  if(!role){err.textContent=MSG.bad_role;$("role").focus();return}
-  if(lines.some(l=>!l.sleeve||!l.design||!l.size)){err.textContent="Choose a sleeve, back design and size for each shirt, or remove the empty row.";return}
+  const bad=lines.findIndex(l=>!done(l));
+  if(bad>=0){open=bad;renderLines();err.textContent=`Finish shirt ${bad+1}: choose a sleeve, back design and size, or remove it.`;return}
   if(!CFG.endpoint){err.textContent=MSG.not_set_up;return}
   err.textContent="";const btn=$("submit");btn.disabled=true;const label=btn.textContent;btn.textContent="Sending…";
-  const items=toItems();
   try{
-    const r=await fetch(CFG.endpoint,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({name,email,code,role,items,website:$("website").value})});
+    const r=await fetch(CFG.endpoint,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({name,email,code,lines:lines.map(({sleeve,design,role,size,qty})=>({sleeve,design,role,size,qty})),website:$("website").value})});
     const d=await r.json();
     if(!d.ok){err.textContent=MSG[d.error]||MSG.server;return}
-    $("cName").textContent=name;$("cRole").textContent=nameOf(ROLES,role);$("cEmail").textContent=email;
-    $("cSize").textContent=`${totalOf(items)} total (${summary(items)})`;$("cNum").textContent=d.number;
+    $("cName").textContent=name;$("cEmail").textContent=email;
+    $("cSize").innerHTML=`${total()} total<br>`+lines.map(l=>`${esc(lineText(l))} × ${l.qty}`).join("<br>");$("cNum").textContent=d.number;
     $("confirm").querySelector("h2").textContent=d.updated?"Order updated":"Order placed";
     $("orderForm").hidden=true;$("confirm").hidden=false;$("confirm").scrollIntoView({block:"start"});
   }catch(x){err.textContent="Your order didn't send. Check your connection and try again."}

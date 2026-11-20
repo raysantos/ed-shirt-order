@@ -2,58 +2,41 @@
  * ED Shirt Order — Google Apps Script backend.
  *
  * Paste this into Extensions > Apps Script on a PRIVATE Google Sheet.
- * Orders are written to the "Orders" tab; the "Totals" tab tallies
- * shirts by sleeve, back design and size, plus a count by back title. The web app only accepts new orders. It
- * never returns anyone's data, so the sheet stays visible only to
- * people you share it with.
+ * Each shirt line of an order is one row on the "Orders" tab (sleeve,
+ * back design, title on the back, size, quantity). The "Totals" tab
+ * tallies shirts by size and by back title so the printer knows what to
+ * make. The web app only accepts new orders. It never returns anyone's
+ * data, so the sheet stays visible only to people you share it with.
  *
  * Optional: set a team code so only staff who know it can order.
  *   Project Settings > Script Properties > add TEAM_CODE = <your code>
  */
 
 const SIZES = ["XS", "S", "M", "L", "XL", "2XL"];
-const SLEEVES = [
-  { key: "SS", label: "Short sleeve" },
-  { key: "LS", label: "Long sleeve" },
-];
-const DESIGNS = [
-  { key: "B", label: "Red cross badge" },
-  { key: "C", label: "Flag badge" },
-];
-const ROLES = ["Registered Nurse", "Health Technician", "Physician", "Social Worker", "Nurse Manager"];
-const ROLE_KEYS = { RN: "Registered Nurse", HT: "Health Technician", PH: "Physician", SW: "Social Worker", NM: "Nurse Manager" };
-// One group per sleeve + back design, e.g. "LS-B" = long sleeve, red cross badge.
+const SLEEVES = { SS: "Short sleeve", LS: "Long sleeve" };
+const DESIGNS = { B: "Red cross badge", C: "Flag badge" };
+const ROLES = { RN: "Registered Nurse", HT: "Health Technician", PH: "Physician", SW: "Social Worker", NM: "Nurse Manager" };
+const SLEEVE_KEYS = Object.keys(SLEEVES);
+const DESIGN_KEYS = Object.keys(DESIGNS);
+const ROLE_KEYS = Object.keys(ROLES);
+// Columns on the Totals tab: one per sleeve + back design.
 const GROUPS = [];
-SLEEVES.forEach(function (sl) { DESIGNS.forEach(function (d) { GROUPS.push({ key: sl.key + "-" + d.key, label: sl.label + " · " + d.label }); }); });
-// One column per group + size, e.g. "LS-B-M".
-const ITEMS = [];
-GROUPS.forEach(function (g) { SIZES.forEach(function (sz) { ITEMS.push(g.key + "-" + sz); }); });
+SLEEVE_KEYS.forEach(function (s) { DESIGN_KEYS.forEach(function (d) { GROUPS.push({ sleeve: SLEEVES[s], design: DESIGNS[d] }); }); });
 
-const MAX_PER_ITEM = 25;
+const MAX_QTY = 25;
+const MAX_LINES = 30;
 const ORDERS = "Orders";
 const TOTALS = "Totals";
-const BASE_HEADERS = ["Order #", "Submitted", "Last updated", "Name", "Email", "Back title"];
-const HEADERS = BASE_HEADERS.concat(ITEMS, ["Total"]);
+const HEADERS = ["Order #", "Submitted", "Last updated", "Name", "Email", "Sleeve", "Back design", "Title on back", "Size", "Qty"];
+const COL = {};
+HEADERS.forEach(function (h, i) { COL[h] = i + 1; });
 const EMAIL_SUBJECT = "Your ED shirt order";
 const FORM_URL = "https://raysantos.github.io/ed-shirt-order/";
 
-function sleeveLabel(key) {
-  for (let i = 0; i < SLEEVES.length; i++) if (SLEEVES[i].key === key) return SLEEVES[i].label;
-  return key;
-}
-function designLabel(key) {
-  for (let i = 0; i < DESIGNS.length; i++) if (DESIGNS[i].key === key) return DESIGNS[i].label;
-  return key;
-}
-function itemLabel(item) {
-  const p = item.split("-");
-  return sleeveLabel(p[0]) + " · " + designLabel(p[1]) + " · " + p[2];
-}
-
 /**
  * Run from the editor (Run > setup) to build or rebuild the tabs.
- * If the Orders tab has an older column layout, it is renamed
- * (never deleted) and a fresh Orders tab is created.
+ * If the Orders tab has an older column layout and holds orders, it is
+ * renamed (never deleted) and a fresh Orders tab is created.
  */
 function setup() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -61,57 +44,56 @@ function setup() {
   if (sh) {
     const width = Math.max(sh.getLastColumn(), 1);
     const current = sh.getRange(1, 1, 1, width).getValues()[0].join("|");
-    if (current !== HEADERS.join("|") && sh.getLastRow() > 1) {
-      sh.setName(ORDERS + " (old " + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "MMM d h.mm a") + ")");
-      sh = null;
+    if (current !== HEADERS.join("|")) {
+      if (sh.getLastRow() > 1) {
+        sh.setName(ORDERS + " (old " + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "MMM d h.mm a") + ")");
+        sh = null;
+      } else {
+        sh.clear();
+        sh.getBandings().forEach(function (b) { b.remove(); });
+      }
     }
   }
-  if (!sh) sh = ss.getSheetByName(ORDERS) || ss.insertSheet(ORDERS, 0);
+  if (!sh) sh = ss.insertSheet(ORDERS, 0);
   if (sh.getMaxColumns() < HEADERS.length) sh.insertColumnsAfter(sh.getMaxColumns(), HEADERS.length - sh.getMaxColumns());
   sh.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);
   sh.setFrozenRows(1);
 
-  // Totals: sizes down, sleeve + back design across; then a count by back title.
   let t = ss.getSheetByName(TOTALS);
   if (!t) t = ss.insertSheet(TOTALS);
   t.clear();
   t.getBandings().forEach(function (b) { b.remove(); });
-  const head = ["Size"].concat(GROUPS.map(function (g) { return g.label; }), ["Total"]);
-  if (t.getMaxColumns() < head.length) t.insertColumnsAfter(t.getMaxColumns(), head.length - t.getMaxColumns());
-  t.getRange(1, 1, 1, head.length).setValues([head]);
-  SIZES.forEach(function (sz, i) {
-    const row = [sz];
-    GROUPS.forEach(function (g) {
-      const col = columnLetter(HEADERS.indexOf(g.key + "-" + sz) + 1);
-      row.push("=SUM(" + ORDERS + "!" + col + "2:" + col + ")");
-    });
-    const r = i + 2;
-    row.push("=SUM(B" + r + ":" + columnLetter(GROUPS.length + 1) + r + ")");
-    t.getRange(r, 1, 1, row.length).setValues([row]);
-  });
-  const last = SIZES.length + 2;
-  const totalRow = ["Total"];
-  for (let c = 2; c <= head.length; c++) {
-    const L = columnLetter(c);
-    totalRow.push("=SUM(" + L + "2:" + L + (last - 1) + ")");
-  }
-  t.getRange(last, 1, 1, totalRow.length).setValues([totalRow]);
-  t.getRange(last + 1, 1, 1, 2).setValues([["Orders", "=COUNTA(" + ORDERS + "!A2:A)"]]);
+  const cols = GROUPS.length + 2;
+  if (t.getMaxColumns() < cols) t.insertColumnsAfter(t.getMaxColumns(), cols - t.getMaxColumns());
+  const O = function (h) { const L = columnLetter(COL[h]); return ORDERS + "!$" + L + "$2:$" + L; };
+  const groupHead = GROUPS.map(function (g) { return g.sleeve + " · " + g.design; });
 
-  // By back title: how many shirts of each group carry each title.
-  const rStart = last + 3;
-  t.getRange(rStart, 1, 1, head.length).setValues([["Back title"].concat(GROUPS.map(function (g) { return g.label; }), ["Total"])]);
-  const roleCol = columnLetter(HEADERS.indexOf("Back title") + 1);
-  ROLES.forEach(function (role, i) {
-    const r = rStart + 1 + i;
-    const row = [role];
-    GROUPS.forEach(function (g) {
-      const c1 = columnLetter(HEADERS.indexOf(g.key + "-" + SIZES[0]) + 1);
-      const c2 = columnLetter(HEADERS.indexOf(g.key + "-" + SIZES[SIZES.length - 1]) + 1);
-      row.push("=SUMPRODUCT((" + ORDERS + "!" + roleCol + "2:" + roleCol + "=$A" + r + ")*" + ORDERS + "!" + c1 + "2:" + c2 + ")");
-    });
-    row.push("=SUM(B" + r + ":" + columnLetter(GROUPS.length + 1) + r + ")");
-    t.getRange(r, 1, 1, row.length).setValues([row]);
+  // Section 1: sizes down, sleeve + back design across.
+  t.getRange(1, 1, 1, cols).setValues([["Size"].concat(groupHead, ["Total"])]);
+  SIZES.forEach(function (sz, i) {
+    const r = i + 2;
+    const row = [sz].concat(GROUPS.map(function (g) {
+      return "=SUMIFS(" + O("Qty") + "," + O("Sleeve") + ",\"" + g.sleeve + "\"," + O("Back design") + ",\"" + g.design + "\"," + O("Size") + ",$A" + r + ")";
+    }));
+    row.push("=SUM(B" + r + ":" + columnLetter(cols - 1) + r + ")");
+    t.getRange(r, 1, 1, cols).setValues([row]);
+  });
+  const sizeTotal = SIZES.length + 2;
+  const tr = ["Total"];
+  for (let c = 2; c <= cols; c++) { const L = columnLetter(c); tr.push("=SUM(" + L + "2:" + L + (sizeTotal - 1) + ")"); }
+  t.getRange(sizeTotal, 1, 1, cols).setValues([tr]);
+  t.getRange(sizeTotal + 1, 1, 1, 2).setValues([["Orders", "=COUNTUNIQUE(" + O("Order #") + ")"]]);
+
+  // Section 2: back titles down, sleeve + back design across.
+  const roleHead = sizeTotal + 3;
+  t.getRange(roleHead, 1, 1, cols).setValues([["Title on back"].concat(groupHead, ["Total"])]);
+  ROLE_KEYS.forEach(function (k, i) {
+    const r = roleHead + 1 + i;
+    const row = [ROLES[k]].concat(GROUPS.map(function (g) {
+      return "=SUMIFS(" + O("Qty") + "," + O("Sleeve") + ",\"" + g.sleeve + "\"," + O("Back design") + ",\"" + g.design + "\"," + O("Title on back") + ",$A" + r + ")";
+    }));
+    row.push("=SUM(B" + r + ":" + columnLetter(cols - 1) + r + ")");
+    t.getRange(r, 1, 1, cols).setValues([row]);
   });
 
   const def = ss.getSheetByName("Sheet1");
@@ -122,72 +104,55 @@ function setup() {
 
 /** Formats both tabs to match the form. Safe to run again any time. */
 function styleSheets() {
-  const INK = "#1d2a44", PAPER = "#e7e8eb", ACCENT = "#e0a526", LINE = "#c6c9d1", ALT = "#2b3d63";
+  const INK = "#1d2a44", PAPER = "#e7e8eb", ACCENT = "#e0a526", LINE = "#c6c9d1";
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sh = ss.getSheetByName(ORDERS);
   const t = ss.getSheetByName(TOTALS);
   const n = HEADERS.length;
-  const firstItem = BASE_HEADERS.length + 1;
-  const totalCol = HEADERS.indexOf("Total") + 1;
-  const accentGroups = function () {
-    GROUPS.forEach(function (g, i) { if (i % 2) sh.getRange(1, firstItem + i * SIZES.length, 1, SIZES.length).setBackground(ALT); });
-    sh.getRange(1, totalCol).setBackground(ACCENT).setFontColor(INK);
-  };
 
   // Orders tab
   const maxRows = sh.getMaxRows();
   sh.getRange(1, 1, maxRows, n).setFontFamily("Arial").setFontSize(10).setVerticalAlignment("middle");
-  sh.getRange(1, 1, 1, n).setBackground(INK).setFontColor("#ffffff").setFontWeight("bold")
-    .setHorizontalAlignment("center").setWrap(true);
-  sh.getRange(1, 4, 1, 3).setHorizontalAlignment("left");
+  sh.getRange(1, 1, 1, n).setBackground(INK).setFontColor("#ffffff").setFontWeight("bold");
   sh.setRowHeight(1, 32);
-  sh.getRange(2, 1, maxRows - 1, 1).setNumberFormat("@").setHorizontalAlignment("center");
-  sh.getRange(2, 2, maxRows - 1, 2).setNumberFormat("mmm d, yyyy h:mm am/pm").setHorizontalAlignment("left");
-  sh.getRange(2, firstItem, maxRows - 1, ITEMS.length).setNumberFormat("0;-0;\"\"").setHorizontalAlignment("center")
-    .setFontWeight("normal");
-  sh.getRange(2, totalCol, maxRows - 1, 1).setNumberFormat("0").setFontWeight("bold").setHorizontalAlignment("center");
-  [90, 150, 150, 180, 230, 150].forEach(function (w, i) { sh.setColumnWidth(i + 1, w); });
-  for (let c = firstItem; c < totalCol; c++) sh.setColumnWidth(c, 62);
-  sh.setColumnWidth(totalCol, 64);
-  GROUPS.forEach(function (g, i) {
-    sh.getRange(1, firstItem + i * SIZES.length, maxRows, 1)
-      .setBorder(null, true, null, null, null, null, LINE, SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
-  });
+  sh.getRange(2, COL["Order #"], maxRows - 1, 1).setNumberFormat("@").setHorizontalAlignment("center");
+  sh.getRange(2, COL["Submitted"], maxRows - 1, 2).setNumberFormat("mmm d, yyyy h:mm am/pm");
+  sh.getRange(1, COL["Size"], maxRows, 2).setHorizontalAlignment("center");
+  sh.getRange(2, COL["Qty"], maxRows - 1, 1).setNumberFormat("0").setFontWeight("bold");
+  [90, 150, 150, 170, 220, 110, 130, 150, 60, 50].forEach(function (w, i) { sh.setColumnWidth(i + 1, w); });
   sh.getBandings().forEach(function (b) { b.remove(); });
   sh.getRange(1, 1, maxRows, n).applyRowBanding(SpreadsheetApp.BandingTheme.LIGHT_GREY, true, false)
     .setHeaderRowColor(INK).setFirstRowColor("#ffffff").setSecondRowColor("#f3f4f6");
-  // Banding resets header colors; reapply the accents.
-  accentGroups();
+  sh.getRange(1, COL["Qty"]).setBackground(ACCENT).setFontColor(INK);
   sh.setFrozenRows(1);
-  sh.setFrozenColumns(4);
   if (sh.getMaxColumns() > n) sh.deleteColumns(n + 1, sh.getMaxColumns() - n);
   sh.setTabColor(INK);
 
   // Totals tab
-  const tCols = GROUPS.length + 2;
-  const sizeRows = SIZES.length + 3;
-  const roleHead = sizeRows + 2;
-  const tRows = roleHead + ROLES.length;
-  t.getRange(1, 1, tRows, tCols).setFontFamily("Arial").setFontSize(11).setVerticalAlignment("middle")
+  const cols = GROUPS.length + 2;
+  const sizeTotal = SIZES.length + 2;
+  const roleHead = sizeTotal + 3;
+  const tRows = roleHead + ROLE_KEYS.length;
+  t.getRange(1, 1, tRows, cols).setFontFamily("Arial").setFontSize(11).setVerticalAlignment("middle")
     .setFontColor(INK).setBackground(null).setFontWeight("normal");
   [1, roleHead].forEach(function (r) {
-    t.getRange(r, 1, 1, tCols).setBackground(INK).setFontColor("#ffffff").setFontWeight("bold").setWrap(true);
+    t.getRange(r, 1, 1, cols).setBackground(INK).setFontColor("#ffffff").setFontWeight("bold").setWrap(true);
     t.setRowHeight(r, 40);
   });
   t.getRange(2, 1, SIZES.length, 1).setFontWeight("bold");
-  t.getRange(2, tCols, SIZES.length, 1).setFontWeight("bold");
-  t.getRange(2, 1, SIZES.length, tCols).setBorder(null, null, true, null, null, true, LINE, SpreadsheetApp.BorderStyle.SOLID);
-  t.getRange(SIZES.length + 2, 1, 1, tCols).setBackground(ACCENT).setFontWeight("bold");
-  t.getRange(SIZES.length + 3, 1, 1, 2).setBackground(PAPER);
-  t.getRange(roleHead + 1, 1, ROLES.length, 1).setFontWeight("bold");
-  t.getRange(roleHead + 1, tCols, ROLES.length, 1).setFontWeight("bold");
-  t.getRange(roleHead + 1, 1, ROLES.length, tCols).setBorder(null, null, true, null, null, true, LINE, SpreadsheetApp.BorderStyle.SOLID);
-  t.getRange(1, 2, tRows, tCols - 1).setHorizontalAlignment("center").setNumberFormat("0");
+  t.getRange(2, cols, SIZES.length, 1).setFontWeight("bold");
+  t.getRange(2, 1, SIZES.length, cols).setBorder(null, null, true, null, null, true, LINE, SpreadsheetApp.BorderStyle.SOLID);
+  t.getRange(sizeTotal, 1, 1, cols).setBackground(ACCENT).setFontWeight("bold");
+  t.getRange(sizeTotal + 1, 1, 1, 2).setBackground(PAPER);
+  t.getRange(roleHead + 1, 1, ROLE_KEYS.length, 1).setFontWeight("bold");
+  t.getRange(roleHead + 1, cols, ROLE_KEYS.length, 1).setFontWeight("bold");
+  t.getRange(roleHead + 1, 1, ROLE_KEYS.length, cols).setBorder(null, null, true, null, null, true, LINE, SpreadsheetApp.BorderStyle.SOLID);
+  t.getRange(1, 2, tRows, cols - 1).setHorizontalAlignment("center").setNumberFormat("0");
   t.setColumnWidth(1, 150);
-  for (let c = 2; c <= tCols; c++) t.setColumnWidth(c, 130);
+  for (let c = 2; c <= cols; c++) t.setColumnWidth(c, 130);
   for (let r = 2; r <= tRows; r++) if (r !== roleHead) t.setRowHeight(r, 28);
   t.setFrozenRows(1);
-  if (t.getMaxColumns() > tCols) t.deleteColumns(tCols + 1, t.getMaxColumns() - tCols);
+  if (t.getMaxColumns() > cols) t.deleteColumns(cols + 1, t.getMaxColumns() - cols);
   t.setTabColor(ACCENT);
 }
 
@@ -212,16 +177,20 @@ function doPost(e) {
     const email = clean(body.email, 120).toLowerCase();
     if (!name) return json({ ok: false, error: "missing_name" });
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json({ ok: false, error: "bad_email" });
-    const role = ROLE_KEYS[String(body.role || "")];
-    if (!role) return json({ ok: false, error: "bad_role" });
 
-    const items = {};
-    let total = 0;
-    ITEMS.forEach(function (k) {
-      const n = Math.floor(Number(body.items && body.items[k]) || 0);
-      const q = Math.max(0, Math.min(MAX_PER_ITEM, n));
-      if (q) { items[k] = q; total += q; }
+    // Combine identical shirts; drop anything that isn't a real option.
+    const merged = {};
+    const order = [];
+    (Array.isArray(body.lines) ? body.lines : []).slice(0, MAX_LINES).forEach(function (l) {
+      if (!l || !SLEEVES[l.sleeve] || !DESIGNS[l.design] || !ROLES[l.role] || SIZES.indexOf(l.size) < 0) return;
+      const q = Math.max(0, Math.min(MAX_QTY, Math.floor(Number(l.qty) || 0)));
+      if (!q) return;
+      const k = [l.sleeve, l.design, l.role, l.size].join("|");
+      if (!merged[k]) { merged[k] = { sleeve: l.sleeve, design: l.design, role: l.role, size: l.size, qty: 0 }; order.push(k); }
+      merged[k].qty = Math.min(MAX_QTY, merged[k].qty + q);
     });
+    const lines = order.map(function (k) { return merged[k]; });
+    const total = lines.reduce(function (a, l) { return a + l.qty; }, 0);
     if (!total) return json({ ok: false, error: "no_shirts" });
 
     // Slow down repeat submissions from the same email.
@@ -236,32 +205,30 @@ function doPost(e) {
     const header = sh.getRange(1, 1, 1, HEADERS.length).getValues()[0].join("|");
     if (header !== HEADERS.join("|")) return json({ ok: false, error: "not_set_up" });
 
+    // One order per email: replace any earlier rows for this email.
     const now = new Date();
-    const emailCol = HEADERS.indexOf("Email") + 1;
+    let number = "", submitted = now, updated = false;
     const lastRow = sh.getLastRow();
-    let row = 0, number = "", submitted = now, updated = false;
     if (lastRow > 1) {
-      const emails = sh.getRange(2, emailCol, lastRow - 1, 1).getValues();
-      for (let i = 0; i < emails.length; i++) {
-        if (String(emails[i][0]).toLowerCase() === email) { row = i + 2; break; }
+      const vals = sh.getRange(2, 1, lastRow - 1, COL["Email"]).getValues();
+      for (let i = vals.length - 1; i >= 0; i--) {
+        if (String(vals[i][COL["Email"] - 1]).toLowerCase() === email) {
+          number = String(vals[i][0]);
+          submitted = vals[i][1] || now;
+          updated = true;
+          sh.deleteRow(i + 2);
+        }
       }
     }
-    if (row) {
-      const existing = sh.getRange(row, 1, 1, 2).getValues()[0];
-      number = String(existing[0]);
-      submitted = existing[1] || now;
-      updated = true;
-    } else {
-      row = lastRow + 1;
-      number = String(Math.floor(100000 + Math.random() * 900000));
-    }
+    if (!number) number = String(Math.floor(100000 + Math.random() * 900000));
 
-    const values = [number, submitted, now, name, email, role]
-      .concat(ITEMS.map(function (k) { return items[k] || 0; }), [total]);
-    sh.getRange(row, 1, 1, values.length).setValues([values]);
+    const rows = lines.map(function (l) {
+      return [number, submitted, now, name, email, SLEEVES[l.sleeve], DESIGNS[l.design], ROLES[l.role], l.size, l.qty];
+    });
+    sh.getRange(sh.getLastRow() + 1, 1, rows.length, HEADERS.length).setValues(rows);
     lock.releaseLock();
 
-    sendConfirmation(email, name, role, number, items, total, updated);
+    sendConfirmation(email, name, number, lines, total, updated);
     return json({ ok: true, number: number, updated: updated });
   } catch (err) {
     console.error(err);
@@ -271,17 +238,18 @@ function doPost(e) {
   }
 }
 
-function sendConfirmation(email, name, role, number, items, total, updated) {
-  const lines = ITEMS.filter(function (k) { return items[k]; })
-    .map(function (k) { return itemLabel(k) + " × " + items[k]; });
+function lineLabel(l) {
+  return SLEEVES[l.sleeve] + " · " + DESIGNS[l.design] + " · " + ROLES[l.role] + " · " + l.size;
+}
+
+function sendConfirmation(email, name, number, lines, total, updated) {
   const text = [
     "Hi " + name + ",",
     "",
     (updated ? "Your shirt order was updated." : "Your shirt order was received."),
     "",
     "Order #" + number,
-    "Back title: " + role,
-    lines.join("\n"),
+    lines.map(function (l) { return lineLabel(l) + " × " + l.qty; }).join("\n"),
     "Total: " + total + " shirt" + (total === 1 ? "" : "s"),
     "",
     "To change your order, submit the form again with this same email address:",
@@ -292,7 +260,7 @@ function sendConfirmation(email, name, role, number, items, total, updated) {
       to: email,
       subject: EMAIL_SUBJECT + (updated ? " (updated)" : ""),
       body: text,
-      htmlBody: confirmationHtml(name, role, number, items, total, updated),
+      htmlBody: confirmationHtml(name, number, lines, total, updated),
       name: "ED Shirt Order",
     });
   } catch (err) {
@@ -301,7 +269,7 @@ function sendConfirmation(email, name, role, number, items, total, updated) {
 }
 
 /** Email version of the form's look: grey paper, navy ink, mustard button. */
-function confirmationHtml(name, role, number, items, total, updated) {
+function confirmationHtml(name, number, lines, total, updated) {
   const INK = "#1d2a44", PAPER = "#e7e8eb", CARD = "#f7f7f8", LINE = "#c6c9d1",
         MUTED = "#5d6678", ACCENT = "#e0a526", OK = "#2f7a4f";
   const DISPLAY = "'Archivo Black','Arial Black',Impact,Helvetica,Arial,sans-serif";
@@ -316,13 +284,13 @@ function confirmationHtml(name, role, number, items, total, updated) {
     return '<td style="padding:8px 0;font-family:' + MONO + ';font-size:12px;letter-spacing:1px;' +
       'text-transform:uppercase;color:' + MUTED + ';vertical-align:top;width:110px">' + t + '</td>';
   };
-  const rows = ITEMS.filter(function (k) { return items[k]; }).map(function (k) {
-    const p = k.split("-");
+  const rows = lines.map(function (l) {
     return '<tr><td style="padding:10px 0;border-bottom:1px solid ' + LINE + ';font-family:' + BODY +
-      ';font-size:14px;color:' + MUTED + '">' + sleeveLabel(p[0]) + '<br>' + designLabel(p[1]) + '</td>' +
+      ';font-size:14px;line-height:20px;color:' + MUTED + '"><b style="color:' + INK + '">' + ROLES[l.role] + '</b><br>' +
+      SLEEVES[l.sleeve] + ' · ' + DESIGNS[l.design] + '</td>' +
       '<td style="padding:10px 0;border-bottom:1px solid ' + LINE + ';font-family:' + DISPLAY +
-      ';font-size:18px;color:' + INK + '">' + p[2] + '</td><td align="right" style="padding:10px 0;border-bottom:1px solid ' +
-      LINE + ';font-family:' + MONO + ';font-size:15px;color:' + INK + '">× ' + items[k] + '</td></tr>';
+      ';font-size:18px;color:' + INK + '">' + l.size + '</td><td align="right" style="padding:10px 0;border-bottom:1px solid ' +
+      LINE + ';font-family:' + MONO + ';font-size:15px;color:' + INK + '">× ' + l.qty + '</td></tr>';
   }).join("");
 
   return '' +
@@ -338,7 +306,6 @@ function confirmationHtml(name, role, number, items, total, updated) {
         (updated ? "Here's your updated order." : "We've got your order.") + '</div>' +
       '<table role="presentation" width="100%" cellpadding="0" cellspacing="0">' +
         '<tr>' + label("Order #") + '<td style="padding:8px 0;font-family:' + MONO + ';font-size:15px;font-weight:bold;color:' + INK + '">' + esc(number) + '</td></tr>' +
-        '<tr>' + label("Back title") + '<td style="padding:8px 0;font-family:' + BODY + ';font-size:15px;font-weight:bold;color:' + INK + '">' + esc(role) + '</td></tr>' +
         '<tr>' + label("Shirts") + '<td style="padding:8px 0;font-family:' + BODY + ';font-size:15px;font-weight:bold;color:' + INK + '">' + total + ' total</td></tr>' +
       '</table>' +
       '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:12px;border-top:1.5px solid ' + LINE + '">' + rows + '</table>' +
