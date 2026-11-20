@@ -38,7 +38,15 @@ input[type=text],input[type=email]{font:inherit;color:var(--ink);background:var(
 input:focus-visible,button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 fieldset{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
 .lines{display:flex;flex-direction:column;gap:10px}
-.line{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.line{display:grid;grid-template-columns:1fr 1fr;gap:12px 14px;align-items:end}
+.line+.line{border-top:1px solid var(--line);padding-top:14px}
+.lhead{grid-column:1/-1;display:flex;justify-content:space-between;align-items:center;font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink)}
+.ctl{display:flex;flex-direction:column;gap:5px;min-width:0}
+.eb{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.ctl .select{display:block;flex:none;width:100%}
+.lines{gap:14px}
+@media (max-width:600px){.line{grid-template-columns:1fr}.qty{width:max-content}}
+
 .select{position:relative;flex:1 1 130px;min-width:0}
 .select.sleeve{flex-basis:150px}
 .preview{margin:0;display:flex;flex-direction:column;gap:8px;position:sticky;top:0;z-index:5;background:var(--paper);padding:10px 0 12px;margin-top:-10px;box-shadow:0 10px 12px -12px rgba(0,0,0,.35)}
@@ -128,7 +136,7 @@ td.n{font-variant-numeric:tabular-nums;text-align:right}
       <span class="hint">Printed at the top of the badge on the back of every shirt you order.</span>
     </div>
     <fieldset>
-      <legend class="legend">Sleeve, back design, size and quantity</legend>
+      <legend class="legend">Your shirts</legend>
       <div class="lines" id="lines"></div>
       <button type="button" class="btn ghost add" id="addLine">+ Add a shirt</button>
     </fieldset>
@@ -170,7 +178,7 @@ function toItems(){const m={};lines.forEach(l=>{if(l.sleeve&&l.design&&l.size){c
 const opt=(v,t,cur)=>`<option value="${v}"${cur===v?" selected":""}>${t}</option>`;
 $("role").insertAdjacentHTML("beforeend",ROLES.map(([k,t])=>opt(k,t,"RN")).join(""));
 function renderLines(){
-  $("lines").innerHTML=lines.map((l,i)=>`<div class="line"><div class="select sleeve"><select id="sleeve-${i}" data-i="${i}" data-f="sleeve" aria-label="Sleeve, shirt ${i+1}"><option value="">Sleeve</option>${SLEEVES.map(([k,t])=>opt(k,t,l.sleeve)).join("")}</select></div><div class="select sleeve"><select id="design-${i}" data-i="${i}" data-f="design" aria-label="Back design, shirt ${i+1}"><option value="">Back design</option>${DESIGNS.map(([k,t])=>opt(k,t,l.design)).join("")}</select></div><div class="select"><select id="size-${i}" data-i="${i}" data-f="size" aria-label="Size, shirt ${i+1}"><option value="">Size</option>${SIZES.map(z=>opt(z,z,l.size)).join("")}</select></div><div class="qty" role="group" aria-label="Quantity, shirt ${i+1}"><button type="button" data-i="${i}" data-d="-1" aria-label="One fewer">−</button><output>${l.qty}</output><button type="button" data-i="${i}" data-d="1" aria-label="One more">+</button></div>${lines.length>1?`<button type="button" class="rm" data-rm="${i}">Remove</button>`:""}</div>`).join("");
+  $("lines").innerHTML=lines.map((l,i)=>`<div class="line">${lines.length>1?`<div class="lhead"><span>Shirt ${i+1}</span><button type="button" class="rm" data-rm="${i}">Remove</button></div>`:""}<label class="ctl"><span class="eb">Sleeve</span><span class="select"><select id="sleeve-${i}" data-i="${i}" data-f="sleeve"><option value="">Choose</option>${SLEEVES.map(([k,t])=>opt(k,t,l.sleeve)).join("")}</select></span></label><label class="ctl"><span class="eb">Back design</span><span class="select"><select id="design-${i}" data-i="${i}" data-f="design"><option value="">Choose</option>${DESIGNS.map(([k,t])=>opt(k,t,l.design)).join("")}</select></span></label><label class="ctl ctl-size"><span class="eb">Size</span><span class="select"><select id="size-${i}" data-i="${i}" data-f="size"><option value="">Choose</option>${SIZES.map(z=>opt(z,z,l.size)).join("")}</select></span></label><div class="ctl ctl-qty"><span class="eb" id="qty-l-${i}">Quantity</span><div class="qty" role="group" aria-labelledby="qty-l-${i}"><button type="button" data-i="${i}" data-d="-1" aria-label="One fewer">−</button><output>${l.qty}</output><button type="button" data-i="${i}" data-d="1" aria-label="One more">+</button></div></div></div>`).join("");
   paint();
 }
 function preview(){
