@@ -41,13 +41,13 @@ fieldset{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:10px
 .line{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .select{position:relative;flex:1 1 130px;min-width:0}
 .select.sleeve{flex-basis:150px}
-.preview{margin:0;display:flex;flex-direction:column;gap:8px}
+.preview{margin:0;display:flex;flex-direction:column;gap:8px;position:sticky;top:0;z-index:5;background:var(--paper);padding:10px 0 12px;margin-top:-10px;box-shadow:0 10px 12px -12px rgba(0,0,0,.35)}
 .preview .pv{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#dcd9d3;aspect-ratio:3304/1536}
 .preview img{width:100%;height:100%;object-fit:contain;display:block}
 .preview figcaption{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
 .preview figcaption b{font-family:var(--display);font-size:15px;font-weight:400;text-transform:uppercase;color:var(--ink)}
-.preview .note{font-size:12px;color:var(--muted);margin:0}
-.preview a{color:var(--ink)}
+.note{font-size:12px;color:var(--muted);margin:0}
+.note a{color:var(--ink)}
 .select.solo{flex:none;width:100%}
 .style{margin:0;display:flex;flex-direction:column;gap:8px}
 .shot{aspect-ratio:1/1;max-width:100%;border:1.5px dashed var(--line);border-radius:10px;background:var(--card);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;overflow:hidden;color:var(--muted)}
@@ -104,8 +104,8 @@ td.n{font-variant-numeric:tabular-nums;text-align:right}
   <figure class="preview" aria-live="polite">
     <div class="pv"><img id="pv" alt="" src="images/LS-B-RN.jpg"></div>
     <figcaption><b id="pvcap">Long sleeve · Red cross badge · Registered Nurse</b><span>Front · side · back</span></figcaption>
-    <p class="note">Mockups are renderings. Placement and size are accurate; color and fabric will vary slightly. <a href="https://claude.ai/artifact/Wdb6fuG9rwaxoLEJLYZrMz" target="_blank" rel="noopener">See every option</a></p>
   </figure>
+  <p class="note" style="margin-top:-18px">Mockups are renderings. Placement and size are accurate; color and fabric will vary slightly. <a href="https://claude.ai/artifact/Wdb6fuG9rwaxoLEJLYZrMz" target="_blank" rel="noopener">See every option</a></p>
 
   <form id="orderForm" class="card" novalidate>
     <div class="field" id="codeField" hidden>
