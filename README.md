@@ -10,6 +10,7 @@ Shirt order form for the Emergency Department team. The form is a static page on
 | --- | --- |
 | `index.html` | The order form |
 | `config.js` | The web app URL and team code setting |
+| `images/` | Mockups for every sleeve, back design and title (shown as a live preview) |
 | `apps-script/Code.gs` | Backend: saves orders to the sheet and sends confirmation emails |
 
 ## Setup
