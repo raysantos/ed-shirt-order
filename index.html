@@ -103,7 +103,7 @@ td.n{font-variant-numeric:tabular-nums;text-align:right}
 
   <figure class="preview" aria-live="polite">
     <div class="pv"><img id="pv" alt="" src="images/LS-B-RN.jpg"></div>
-    <figcaption><b id="pvcap">Long sleeve · Red cross badge · Registered Nurse</b><span>Front · side · back</span></figcaption>
+    <figcaption><b id="pvcap">Long sleeve · Registered Nurse</b></figcaption>
   </figure>
   <p class="note" style="margin-top:-18px">Mockups are renderings. Placement and size are accurate; color and fabric will vary slightly. <a href="https://claude.ai/artifact/Wdb6fuG9rwaxoLEJLYZrMz" target="_blank" rel="noopener">See every option</a></p>
 
@@ -124,7 +124,7 @@ td.n{font-variant-numeric:tabular-nums;text-align:right}
     </div>
     <div class="field">
       <label for="role">Title on the back</label>
-      <div class="select solo"><select id="role" required><option value="">Choose your title</option></select></div>
+      <div class="select solo"><select id="role" required></select></div>
       <span class="hint">Printed at the top of the badge on the back of every shirt you order.</span>
     </div>
     <fieldset>
@@ -168,7 +168,7 @@ function itemName(k){const[s,d,z]=k.split("-");return `${nameOf(SLEEVES,s)}, ${n
 function summary(c){return ITEMS.filter(k=>c&&c[k]>0).map(k=>`${c[k]} × ${itemName(k)}`).join("; ")}
 function toItems(){const m={};lines.forEach(l=>{if(l.sleeve&&l.design&&l.size){const k=l.sleeve+"-"+l.design+"-"+l.size;m[k]=(m[k]||0)+l.qty}});return m}
 const opt=(v,t,cur)=>`<option value="${v}"${cur===v?" selected":""}>${t}</option>`;
-$("role").insertAdjacentHTML("beforeend",ROLES.map(([k,t])=>opt(k,t,"")).join(""));
+$("role").insertAdjacentHTML("beforeend",ROLES.map(([k,t])=>opt(k,t,"RN")).join(""));
 function renderLines(){
   $("lines").innerHTML=lines.map((l,i)=>`<div class="line"><div class="select sleeve"><select id="sleeve-${i}" data-i="${i}" data-f="sleeve" aria-label="Sleeve, shirt ${i+1}"><option value="">Sleeve</option>${SLEEVES.map(([k,t])=>opt(k,t,l.sleeve)).join("")}</select></div><div class="select sleeve"><select id="design-${i}" data-i="${i}" data-f="design" aria-label="Back design, shirt ${i+1}"><option value="">Back design</option>${DESIGNS.map(([k,t])=>opt(k,t,l.design)).join("")}</select></div><div class="select"><select id="size-${i}" data-i="${i}" data-f="size" aria-label="Size, shirt ${i+1}"><option value="">Size</option>${SIZES.map(z=>opt(z,z,l.size)).join("")}</select></div><div class="qty" role="group" aria-label="Quantity, shirt ${i+1}"><button type="button" data-i="${i}" data-d="-1" aria-label="One fewer">−</button><output>${l.qty}</output><button type="button" data-i="${i}" data-d="1" aria-label="One more">+</button></div>${lines.length>1?`<button type="button" class="rm" data-rm="${i}">Remove</button>`:""}</div>`).join("");
   paint();
@@ -177,7 +177,7 @@ function preview(){
   const l=lines[Math.min(focusLine,lines.length-1)]||{}, s=l.sleeve||"LS", d=l.design||"B", r=$("role").value||"RN";
   const src=`images/${s}-${d}-${r}.jpg`; if(!$("pv").src.endsWith(src))$("pv").src=src;
   $("pv").alt=`${nameOf(SLEEVES,s)} shirt, ${nameOf(DESIGNS,d)}, ${nameOf(ROLES,r)}: front, side and back`;
-  $("pvcap").textContent=`${nameOf(SLEEVES,s)} · ${nameOf(DESIGNS,d)} · ${nameOf(ROLES,r)}`;
+  $("pvcap").textContent=`${nameOf(SLEEVES,s)} · ${nameOf(ROLES,r)}`;
 }
 function paint(){const m=toItems(),t=totalOf(m);$("totalLine").textContent=t?`${t} shirt${t===1?"":"s"}: ${summary(m)}`:"Choose a sleeve, back design and size to add shirts";preview()}
 $("role").addEventListener("change",preview);
