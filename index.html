@@ -67,6 +67,19 @@ fieldset{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:10px
 .preview{margin:0;display:flex;flex-direction:column;gap:8px;position:sticky;top:0;z-index:5;background:var(--paper);padding:10px 0 12px;margin-top:-10px;box-shadow:0 10px 12px -12px rgba(0,0,0,.35)}
 .preview .pv{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#dcd9d3;aspect-ratio:3304/1536}
 .preview img{width:100%;height:100%;object-fit:contain;display:block}
+.pv{all:unset;box-sizing:border-box;display:block;position:relative;cursor:zoom-in}
+.pv:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.zoomhint{position:absolute;right:8px;bottom:8px;display:flex;align-items:center;gap:5px;padding:5px 9px;border-radius:999px;background:rgba(29,42,68,.85);color:#fff;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+.zoom{position:fixed;inset:0;z-index:50;background:#0e1422;display:flex;flex-direction:column}
+.zoom[hidden]{display:none}
+.zbar{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 16px;color:#fff;font-family:var(--display);text-transform:uppercase;font-size:14px}
+.zbar button{all:unset;cursor:pointer;width:40px;height:40px;display:grid;place-items:center;border-radius:50%;background:rgba(255,255,255,.12);color:#fff;font-size:18px}
+.zbar button:focus-visible{outline:3px solid var(--accent)}
+.zscroll{flex:1;overflow:auto;display:grid;place-items:center;touch-action:pinch-zoom pan-x pan-y}
+.zscroll img{max-width:100%;max-height:100%;cursor:zoom-in;display:block}
+.zoom.big .zscroll{place-items:start}
+.zoom.big .zscroll img{max-width:none;max-height:none;width:min(3394px,250vw);cursor:zoom-out}
+.zhelp{margin:0;padding:10px 16px 14px;text-align:center;color:rgba(255,255,255,.65);font-size:12px}
 .preview figcaption{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
 .preview figcaption b{font-family:var(--display);font-size:15px;font-weight:400;text-transform:uppercase;color:var(--ink)}
 .note{font-size:12px;color:var(--muted);margin:0}
@@ -125,7 +138,7 @@ td.n{font-variant-numeric:tabular-nums;text-align:right}
   </header>
 
   <figure class="preview" aria-live="polite">
-    <div class="pv"><img id="pv" alt="" src="images/LS-B-RN.jpg"></div>
+    <button type="button" class="pv" id="pvbtn" aria-label="Zoom in on the shirt picture"><img id="pv" alt="" src="images/LS-B-RN.jpg"><span class="zoomhint" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21M10.5 7.5v6M7.5 10.5h6"/></svg>Zoom</span></button>
     <figcaption><b id="pvcap">Long sleeve · Registered Nurse</b></figcaption>
   </figure>
   <p class="note" style="margin-top:-18px">Mockups are renderings. Placement and size are accurate; color and fabric will vary slightly. <a href="https://claude.ai/artifact/Wdb6fuG9rwaxoLEJLYZrMz" target="_blank" rel="noopener">See every option</a></p>
@@ -239,6 +252,21 @@ $("orderForm").addEventListener("submit",async e=>{
   }catch(x){err.textContent="Your order didn't send. Check your connection and try again."}
   finally{btn.disabled=false;btn.textContent=label}
 });
+</script>
+<div class="zoom" id="zoom" role="dialog" aria-modal="true" aria-label="Shirt picture, zoomed" hidden>
+  <div class="zbar"><span id="zcap"></span><button type="button" id="zclose" aria-label="Close">✕</button></div>
+  <div class="zscroll" id="zscroll"><img id="zimg" alt=""></div>
+  <p class="zhelp">Tap the picture to zoom in, then drag or scroll to look around</p>
+</div>
+<script>
+(()=>{const z=document.getElementById("zoom"),zi=document.getElementById("zimg"),zs=document.getElementById("zscroll"),pv=document.getElementById("pv");let last=null,big=false;
+function openZ(){last=document.activeElement;const src=pv.getAttribute("src").replace("images/","images/full/");zi.src=src;zi.alt=pv.alt;document.getElementById("zcap").textContent=document.getElementById("pvcap").textContent;big=false;z.classList.remove("big");z.hidden=false;document.body.style.overflow="hidden";document.getElementById("zclose").focus()}
+function closeZ(){z.hidden=true;document.body.style.overflow="";if(last)last.focus()}
+document.getElementById("pvbtn").addEventListener("click",openZ);
+document.getElementById("zclose").addEventListener("click",closeZ);
+z.addEventListener("click",e=>{if(e.target===z||e.target===zs)closeZ()});
+zi.addEventListener("click",e=>{const r=zi.getBoundingClientRect(),fx=(e.clientX-r.left)/r.width,fy=(e.clientY-r.top)/r.height;big=!big;z.classList.toggle("big",big);if(big)requestAnimationFrame(()=>{zs.scrollLeft=fx*zi.offsetWidth-zs.clientWidth/2;zs.scrollTop=fy*zi.offsetHeight-zs.clientHeight/2})});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!z.hidden)closeZ()});})();
 </script>
 </body>
 </html>
